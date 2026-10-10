@@ -55,14 +55,23 @@ void main(){
     return true;
   }
 
+  const shadowOf = el => { try { return (chrome.dom && chrome.dom.openOrClosedShadowRoot(el)) || el.shadowRoot; } catch(e) { return el.shadowRoot; } };
+  function allVideos(root, out) {
+    for (const el of root.querySelectorAll('*')) {
+      if (el.localName === 'video') out.push(el);
+      const sr = shadowOf(el); if (sr) allVideos(sr, out);
+    }
+    return out;
+  }
   function pickVideo() {
     let best = null, ba = 0;
-    for (const v of document.querySelectorAll('video')) {
+    for (const v of allVideos(document, [])) {
       const r = v.getBoundingClientRect(), a = r.width * r.height;
       if (a > ba && v.videoWidth && r.bottom > 0 && r.top < innerHeight) { best = v; ba = a; }
     }
     return best;
   }
+  let lastPick = 0;
 
   const resetTrans = () => { acc = 0; lastT = performance.now(); };
   function bind(v) {
@@ -80,7 +89,8 @@ void main(){
 
   function frame() {
     if (!on) return;
-    const v = (vid && vid.isConnected && vid.videoWidth) ? vid : (vid = pickVideo());
+    let v = (vid && vid.isConnected && vid.videoWidth) ? vid : null;
+    if (!v && performance.now() - lastPick > 600) { lastPick = performance.now(); v = vid = pickVideo(); }
     schedule();
     if (!v) { if (cv.parentNode) cv.remove(); status('Nessun video in questa pagina'); return; }
     bind(v);
@@ -95,13 +105,26 @@ void main(){
     if (cv.previousSibling !== v) v.parentNode.insertBefore(cv, v.nextSibling);
     cv.style.left = (v.offsetLeft + (W-w)/2) + 'px'; cv.style.top = (v.offsetTop + (H-h)/2) + 'px';
     cv.style.width = w + 'px'; cv.style.height = h + 'px';
+    const zi = getComputedStyle(v).zIndex; cv.style.zIndex = zi === 'auto' ? '' : zi;
+    // correzione per transform propri del video (es. translate(-50%,-50%)) e contenitori trasformati
+    const vr = v.getBoundingClientRect(), cr = cv.getBoundingClientRect(), k = vr.width / W || 1;
+    if (isFinite(k) && k > 0) {
+      const dx = (vr.left + vr.width/2) - (cr.left + cr.width/2), dy = (vr.top + vr.height/2) - (cr.top + cr.height/2);
+      if (Math.abs(dx) > .5 || Math.abs(dy) > .5) {
+        cv.style.left = (v.offsetLeft + (W-w)/2 + dx/k) + 'px'; cv.style.top = (v.offsetTop + (H-h)/2 + dy/k) + 'px';
+      }
+    }
     const bw = Math.round(w*dpr), bh = Math.round(h*dpr);
     if (cv.width !== bw || cv.height !== bh) { cv.width = bw; cv.height = bh; gl.viewport(0, 0, bw, bh); }
     if (v.readyState < 2) return;
     try {
       gl.bindTexture(gl.TEXTURE_2D, tex);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, v);
-    } catch (e) { status('Video non accessibile (protetto o di altro dominio)'); cv.remove(); return; }
+    } catch (e) {
+      if (e.name === 'SecurityError' && !v.__p3dFix) fixCors(v);
+      else if (v.__p3dFix !== 1) status('Video protetto: il sito non permette di leggerlo');
+      cv.remove(); return;
+    }
     const pg = prog();
     status(pg < 1 ? 'Transizione: ora ' + (effDepth()>0?'+':'') + effDepth().toFixed(1) + '% → ' + S.depth.toFixed(1) + '%' : '');
     gl.uniform1f(U.mode, S.mode); gl.uniform1f(U.shift, effDepth()/100); gl.uniform1f(U.swp, S.swap?1:0);
@@ -110,6 +133,18 @@ void main(){
     gl.uniform2f(U.ew, S.eyes==1?2:S.eyes==2?0:1, S.eyes==2?2:S.eyes==1?0:1); gl.uniform2f(U.pan, S.px, S.py);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     if (!cv.parentNode) v.parentNode.insertBefore(cv, v.nextSibling);
+  }
+  // video di un altro dominio senza CORS: chiede al background di aggiungere l'header CORS
+  // alle risposte media di questa scheda, poi ricarica il video dallo stesso punto
+  async function fixCors(v) {
+    v.__p3dFix = 1; status('Video di altro dominio: abilito la lettura…');
+    try { await chrome.runtime.sendMessage({cmd:'cors', on:true}); } catch(e) {}
+    const t = v.currentTime, play = !v.paused;
+    const off = () => { v.removeEventListener('loadedmetadata', onMeta); v.removeEventListener('error', onErr); };
+    const onMeta = () => { off(); v.__p3dFix = 2; try { v.currentTime = t; } catch(e) {} if (play) v.play().catch(() => {}); };
+    const onErr = () => { off(); v.__p3dFix = 3; v.removeAttribute('crossorigin'); v.load(); try { v.currentTime = t; } catch(e) {} if (play) v.play().catch(() => {}); status('Video protetto: il sito non permette di leggerlo'); };
+    v.addEventListener('loadedmetadata', onMeta); v.addEventListener('error', onErr);
+    v.crossOrigin = 'anonymous'; v.load();
   }
   function schedule() {
     cancelAnimationFrame(loopId);
@@ -122,7 +157,7 @@ void main(){
     host = document.createElement('div');
     host.style.cssText = 'position:fixed;top:12px;right:12px;z-index:2147483647;';
     sh = host.attachShadow({mode:'open'});
-    sh.innerHTML = `<style>
+    const HTML = `<style>
       .p{font:12px system-ui,sans-serif;color:#eee;background:rgba(16,16,22,.93);border:1px solid #333;border-radius:10px;padding:8px 10px;width:290px}
       .h{display:flex;justify-content:space-between;align-items:center;font-weight:600;margin-bottom:4px}
       .r{display:flex;align-items:center;gap:6px;margin:3px 0}.r span:first-child{width:74px;color:#aaa}
@@ -137,6 +172,7 @@ void main(){
       <div class="r"><button id="rv">reset vista</button><button id="rc">reset colori</button><button id="rd">profondità 0</button></div>
       <div style="color:#888">Alt+3 on/off · Alt+←/→ profondità · Alt+H pannello</div>
     </div><div id="st"></div></div>`;
+    { const d = new DOMParser().parseFromString(HTML, 'text/html'); for (const n of [...d.head.childNodes, ...d.body.childNodes]) sh.appendChild(n); }
     for (const id of ['mode','ana','aspect','eyes']) sh.getElementById(id).onchange = e => { S[id] = +e.target.value; save(); };
     sh.getElementById('swap').onchange = e => { S.swap = e.target.checked; save(); };
     for (const s of SL) sh.getElementById(s[0]).oninput = e => { S[s[0]] = s[5] ? -(+e.target.value) : +e.target.value; syncPanel(); save(); };
@@ -158,14 +194,18 @@ void main(){
     }
   }
   function placeHost() { const p = document.fullscreenElement || document.documentElement; if (host && host.parentNode !== p) p.appendChild(host); }
-  document.addEventListener('fullscreenchange', placeHost);
+  document.addEventListener('fullscreenchange', () => {
+    placeHost();
+    const f = document.fullscreenElement;   // video messo a schermo intero da solo: non puo' contenere il canvas -> sposta al contenitore
+    if (on && f && f.localName === 'video') { const p = f.parentElement || (f.getRootNode() && f.getRootNode().host); if (p && p.requestFullscreen) p.requestFullscreen().catch(() => {}); }
+  });
 
   function toggle(force) {
     on = typeof force === 'boolean' ? force : !on;
     if (on) {
       resetTrans();
-      if (!pickVideo()) { on = false; return; }   // frame senza video: ignora
-      if (!gl && !initGL()) { on = false; return; }
+      if (!pickVideo()) { on = false; return 'none'; }   // frame senza video: ignora
+      if (!gl && !initGL()) { on = false; return 'none'; }
       if (!host) buildPanel();
       placeHost(); host.style.display = '';
       vid = pickVideo(); frame();
@@ -174,7 +214,9 @@ void main(){
       if (cv) cv.remove();
       if (host) host.style.display = 'none';
     }
+    return on ? 'on' : 'off';
   }
+  window.__p3dToggle = () => toggle();
 
   window.addEventListener('keydown', e => {
     if (!e.altKey) return;

@@ -60,3 +60,10 @@ Nessun dato viene raccolto o inviato. I fotogrammi sono elaborati in locale nel 
 
 ## Licenza
 MIT, vedi [LICENSE](LICENSE).
+
+## Novità 1.1.0
+- Funziona su tutti i siti e negli iframe (permesso "tutti i siti").
+- Trova i video anche dentro Shadow DOM.
+- Video di altri domini senza CORS: l'estensione abilita la lettura e ricarica il video dallo stesso punto.
+- Posizionamento corretto con video trasformati via CSS; schermo intero del solo `<video>` gestito.
+- Icona `?` se nella pagina non c'è nessun video. Restano esclusi i video con DRM e le pagine `chrome://`.
