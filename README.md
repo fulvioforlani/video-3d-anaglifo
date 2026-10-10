@@ -17,6 +17,14 @@ Contiene due strumenti:
 - Colore (saturazione), contrasto, gamma, luminosità
 - 4 tipi di anaglifo: Dubois, colore, grigio, rosso/blu
 
+## Installer per Windows (consigliato)
+1. Vai su [**Releases**](../../releases/latest) e scarica **`Video3D-Setup.exe`**.
+2. Fai doppio clic. Se Windows mostra *"Windows ha protetto il PC"* (l'installer non è firmato digitalmente), premi **Ulteriori informazioni → Esegui comunque**.
+3. Compare l'icona **Player 3D** sul desktop: aprila e trascina dentro un video 3D.
+4. Alla fine l'installer ti chiede se vuoi anche l'estensione per i siti web: rispondi Sì e segui i passi sotto (Chrome non permette di installarla in automatico fuori dal Web Store).
+
+Non servono diritti di amministratore. Si disinstalla da *Impostazioni → App installate → Video 3D Anaglifo*.
+
 ## Installare l'estensione (Chrome, Edge, Brave)
 1. Scarica il repository: **Code → Download ZIP** (oppure la [Release](../../releases)) e decomprimilo.
 2. Apri `chrome://extensions` (su Edge `edge://extensions`).
