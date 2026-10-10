@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Video 3D Anaglifo",
+  "version": "1.0.0",
+  "description": "Guarda i video 3D (Side-by-Side / Top-Bottom) del browser in anaglifo rosso/ciano, con profondità, zoom e colori regolabili.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "action": { "default_title": "3D on/off (Alt+3)", "default_icon": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" } },
+  "icons": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" },
+  "background": { "service_worker": "background.js" },
+  "commands": {
+    "toggle-3d": { "suggested_key": { "default": "Alt+3" }, "description": "Attiva/disattiva il 3D sul video" }
+  }
+}

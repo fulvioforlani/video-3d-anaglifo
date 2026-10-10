@@ -1,0 +1,321 @@
+﻿<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Player 3D</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { --bg:#0b0b0e; --panel:#16161c; --fg:#e8e8ee; --dim:#8a8a98; --acc:#ff4d4d; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:14px system-ui,Segoe UI,sans-serif; overflow:hidden; }
+  #stage { position:absolute; inset:0 0 auto 0; bottom:0; display:flex; align-items:center; justify-content:center; }
+  canvas { max-width:100%; max-height:100%; background:#000; }
+  #drop { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; text-align:center; color:var(--dim); pointer-events:none; }
+  #drop b { font-size:22px; color:var(--fg); }
+  #ui { position:absolute; left:0; right:0; bottom:0; background:linear-gradient(transparent,rgba(0,0,0,.88) 35%); padding:26px 14px 10px; transition:opacity .25s; }
+  body.idle #ui { opacity:0; pointer-events:none; } body.idle { cursor:none; }
+  #seekwrap { position:relative; height:22px; display:flex; align-items:center; cursor:pointer; }
+  #seekbar { position:relative; width:100%; height:6px; background:#333; border-radius:3px; }
+  #seekfill { position:absolute; left:0; top:0; bottom:0; width:0; background:var(--acc); border-radius:3px; }
+  #seekknob { position:absolute; top:50%; width:14px; height:14px; margin:-7px 0 0 -7px; background:#fff; border-radius:50%; left:0; }
+  #hover { position:absolute; bottom:24px; padding:2px 6px; background:#000c; border-radius:4px; font-size:12px; display:none; transform:translateX(-50%); }
+  .row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:4px; }
+  button,select { background:var(--panel); color:var(--fg); border:1px solid #2c2c36; border-radius:6px; padding:6px 10px; font:inherit; cursor:pointer; }
+  button:hover,select:hover { border-color:#555; }
+  label { display:flex; align-items:center; gap:6px; color:var(--dim); }
+  input[type=range] { accent-color:var(--acc); }
+  #depth { width:360px; }
+  .val { min-width:54px; color:var(--fg); font-variant-numeric:tabular-nums; }
+  #time { font-variant-numeric:tabular-nums; color:var(--dim); }
+  #help { position:absolute; top:10px; right:12px; color:var(--dim); font-size:12px; text-align:right; line-height:1.6; background:#0009; padding:8px 10px; border-radius:8px; display:none; }
+  #toast { position:absolute; top:14px; left:50%; transform:translateX(-50%); background:#000b; padding:6px 14px; border-radius:8px; opacity:0; transition:opacity .3s; pointer-events:none; }
+  .sp { flex:1; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="cv"></canvas></div>
+<div id="drop"><b>Trascina qui un video 3D</b><span>oppure premi <b style="font-size:inherit">O</b> per aprire un file</span><span>Formati: Side-by-Side, Top-Bottom, 2D</span></div>
+<div id="toast"></div>
+<div id="help">
+  <b>Tasti</b><br>
+  Spazio = play/pausa<br>
+  ← → = profondità ±0,1% (Shift ±1%)<br>↑ ↓ = avanti/indietro 5 s &nbsp; PagSu/PagGiù = 30 s<br>
+  , . = fotogramma indietro/avanti<br>
+  0 = azzera profondità<br>
+  S = scambia occhi (se è invertito)<br>
+  M = formato (SBS / TB / 2D)<br>
+  A = tipo anaglifo &nbsp; W = larghezza immagine<br>
+  [ ] = velocità &nbsp; F = schermo intero<br>
+  Rotella/+ - = zoom, trascina col mouse = sposta, I J K L = sposta, R = azzera vista<br>O = apri file &nbsp; H = questo aiuto
+</div>
+
+<div id="ui">
+  <div id="seekwrap"><div id="seekbar"><div id="seekfill"></div><div id="seekknob"></div></div><div id="hover"></div></div>
+  <div class="row">
+    <button id="bPlay" title="Spazio">▶</button>
+    <button id="bBack" title="-5 s">⏪ 5s</button>
+    <button id="bFwd" title="+5 s">5s ⏩</button>
+    <span id="time">0:00 / 0:00</span>
+    <span class="sp"></span>
+    <label>🔊 <input id="vol" type="range" min="0" max="1" step="0.01" value="1" style="width:90px"></label>
+    <label>Vel <select id="rate"><option>0.5</option><option>0.75</option><option selected>1</option><option>1.25</option><option>1.5</option><option>2</option></select></label>
+    <button id="bFull" title="F">⛶</button>
+    <button id="bHelp" title="H">?</button>
+  </div>
+  <div class="row">
+    <label>Profondità <input id="depth" type="range" min="-30" max="30" step="0.05" value="0"> <span class="val" id="depthVal">0,0%</span></label>
+    <button id="bZero" title="0">azzera</button>
+    <label>Transizione <input id="trans" type="range" min="0" max="60" step="1" value="10" style="width:110px"> <span class="val" id="transVal">10 s</span></label>
+    <label>Formato <select id="mode"><option value="0">Side-by-Side</option><option value="1">Top-Bottom</option><option value="2">2D (nessun 3D)</option></select></label>
+    <label>Anaglifo <select id="ana"><option value="0">Rosso/Ciano Dubois</option><option value="1">Rosso/Ciano colore</option><option value="2">Rosso/Ciano grigio</option><option value="3">Rosso/Blu</option></select></label>
+    <label>Larghezza <select id="aspect"><option value="0">Auto</option><option value="1">Mezzo (SBS compresso)</option><option value="2">Pieno</option></select></label>
+    <label>Sposta <select id="eyes"><option value="0">Entrambi gli occhi</option><option value="1">Solo sinistro</option><option value="2">Solo destro</option></select></label><label><input id="swap" type="checkbox"> Scambia occhi</label>
+    <label>Luminosità <input id="bri" type="range" min="0.6" max="1.8" step="0.02" value="1" style="width:90px"></label>
+  </div>
+  <div class="row">
+    <label>Zoom <input id="zoom" type="range" min="1" max="4" step="0.01" value="1" style="width:130px"> <span class="val" id="zoomVal">1,00x</span></label>
+    <label>◀ ▶ <input id="panx" type="range" min="-0.5" max="0.5" step="0.002" value="0" style="width:130px"></label>
+    <label>▲ ▼ <input id="pany" type="range" min="-0.5" max="0.5" step="0.002" value="0" style="width:130px"></label>
+    <button id="bView" title="R">reset vista</button>
+    <label>Colore <input id="sat" type="range" min="0.5" max="3" step="0.02" value="1" style="width:100px"></label>
+    <label>Contrasto <input id="con" type="range" min="0.7" max="1.8" step="0.02" value="1" style="width:100px"></label>
+    <label>Gamma <input id="gam" type="range" min="0.6" max="2" step="0.02" value="1" style="width:100px"></label>
+    <button id="bCol" title="reset colori">reset colori</button>
+  </div>
+</div>
+<input id="file" type="file" accept="video/*,.mkv,.mp4,.avi,.mov,.webm" hidden>
+
+<script>
+const $ = id => document.getElementById(id);
+const cv = $('cv'), vid = document.createElement('video');
+vid.playsInline = true; vid.preload = 'auto';
+const gl = cv.getContext('webgl', {antialias:false, preserveDrawingBuffer:false});
+
+// ---------- impostazioni persistenti ----------
+let S = {trans:10, depth:0, mode:2, ana:0, aspect:0, swap:false, eyes:0, zoom:1, px:0, py:0, sat:1, con:1, gam:1, bri:1, vol:1, rate:1};
+try { Object.assign(S, JSON.parse(localStorage.getItem('p3d') || '{}')); S.mode = 2; } catch(e){}
+const save = () => { try { localStorage.setItem('p3d', JSON.stringify(S)); } catch(e){} };
+
+// ---------- WebGL ----------
+const vs = `attribute vec2 p; varying vec2 uv; void main(){ uv=vec2(p.x*.5+.5, .5-p.y*.5); gl_Position=vec4(p,0.,1.); }`;
+const fs = `precision mediump float;
+varying vec2 uv; uniform sampler2D tex;
+uniform float mode, shift, swp, ana, bri; uniform vec2 ew;
+uniform float zoom, sat, con, gam; uniform vec2 pan;
+vec3 grade(vec3 c){ float y=dot(c,vec3(.299,.587,.114)); c=mix(vec3(y),c,sat); c=(c-.5)*con+.5; return pow(max(c,0.),vec3(1./gam)); }
+vec3 eye(float e, vec2 q){ float x=q.x; // e: 0 sx, 1 dx
+  if (x < 0. || x > 1. || q.y < 0. || q.y > 1.) return vec3(0.);
+  vec2 c;
+  if (mode < .5)      c = vec2(x*.5 + e*.5, q.y);
+  else if (mode < 1.5) c = vec2(x, q.y*.5 + e*.5);
+  else                 c = vec2(x, q.y);
+  return texture2D(tex, c).rgb;
+}
+void main(){
+  float a = mix(0., 1., swp); vec2 q = (uv-.5)/zoom + .5 + pan;
+  vec3 L = eye(a, q + vec2(shift*ew.x,0.));
+  vec3 R = eye(1.-a, q - vec2(shift*ew.y,0.));
+  L=grade(L); R=grade(R); vec3 o;
+  if (ana < .5) {
+    o.r = dot(L, vec3( .437, .449, .164)) + dot(R, vec3(-.011,-.032,-.007));
+    o.g = dot(L, vec3(-.062,-.062,-.024)) + dot(R, vec3( .377, .761, .009));
+    o.b = dot(L, vec3(-.048,-.050,-.017)) + dot(R, vec3(-.026,-.093,1.234));
+  } else if (ana < 1.5) { o = vec3(L.r, R.g, R.b); }
+  else if (ana < 2.5) { float gL = dot(L, vec3(.299,.587,.114)), gr = dot(R, vec3(.299,.587,.114)); o = vec3(gL, gr, gr); }
+  else { float gL = dot(L, vec3(.299,.587,.114)), gr = dot(R, vec3(.299,.587,.114)); o = vec3(gL, 0., gr); }
+  gl_FragColor = vec4(clamp(o*bri, 0., 1.), 1.);
+}`;
+function sh(t, s){ const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if(!gl.getShaderParameter(o, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(o)); return o; }
+const prog = gl.createProgram(); gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(prog); gl.useProgram(prog);
+const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+const loc = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+for (const [k,v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR],[gl.TEXTURE_MAG_FILTER, gl.LINEAR],[gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE],[gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+const U = n => gl.getUniformLocation(prog, n);
+const uMode=U('mode'), uShift=U('shift'), uSwp=U('swp'), uAna=U('ana'), uBri=U('bri'), uEw=U('ew'), uZoom=U('zoom'), uPan=U('pan'), uSat=U('sat'), uCon=U('con'), uGam=U('gam');
+
+let loaded = false, lastW = 0, lastH = 0;
+function layout(){
+  const vw = vid.videoWidth, vh = vid.videoHeight; if (!vw) return;
+  let ew = vw, eh = vh;                       // dimensioni di un occhio (come memorizzate)
+  if (S.mode == 0) ew = vw/2; else if (S.mode == 1) eh = vh/2;
+  // larghezza "vera" dell'immagine: SBS compresso => raddoppia
+  let ar = ew/eh;
+  if (S.mode == 0) {
+    if (S.aspect == 1) ar = (vw)/vh;           // mezzo SBS: occhio compresso alla metà
+    else if (S.aspect == 2) ar = ew/eh;
+    else ar = ar < 1.5 ? vw/vh : ew/eh;        // auto
+  } else if (S.mode == 1) {
+    if (S.aspect == 1) ar = vw/eh*0 + vw/(vh);  // TB compresso in altezza => aspetto del frame intero
+    else if (S.aspect == 2) ar = vw/eh;
+    else ar = (vw/eh) > 3.2 ? vw/vh : vw/eh;
+  } else ar = vw/vh;
+  const uiH = document.fullscreenElement ? 0 : $('ui').offsetHeight; $('stage').style.bottom = uiH+'px';
+  const maxW = innerWidth, maxH = innerHeight - uiH;
+  let w = Math.min(maxW, maxH*ar), h = w/ar;
+  const dpr = devicePixelRatio || 1;
+  cv.style.width = w+'px'; cv.style.height = h+'px';
+  cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr);
+  gl.viewport(0, 0, cv.width, cv.height);
+}
+function draw(){
+  requestAnimationFrame(draw);
+  stepTrans();
+  if (!loaded || vid.readyState < 2) return;
+  if (vid.videoWidth !== lastW || vid.videoHeight !== lastH) { lastW = vid.videoWidth; lastH = vid.videoHeight; layout(); }
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, vid);
+  gl.uniform1f(uMode, S.mode); gl.uniform1f(uShift, effDepth()/100); gl.uniform1f(uSwp, S.swap?1:0);
+  gl.uniform1f(uAna, S.ana); gl.uniform1f(uBri, S.bri); gl.uniform1f(uZoom, S.zoom); gl.uniform2f(uPan, S.px, S.py); gl.uniform1f(uSat, S.sat); gl.uniform1f(uCon, S.con); gl.uniform1f(uGam, S.gam); gl.uniform2f(uEw, S.eyes==1?2:S.eyes==2?0:1, S.eyes==2?2:S.eyes==1?0:1);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  updateSeek();
+}
+requestAnimationFrame(draw);
+addEventListener('resize', layout);
+
+// ---------- UI ----------
+const fmt = t => { if(!isFinite(t)) return '0:00'; t=Math.max(0,t|0); const h=t/3600|0, m=(t%3600)/60|0, s=t%60; return (h?h+':'+String(m).padStart(2,'0'):m)+':'+String(s).padStart(2,'0'); };
+const toast = (m) => { const t=$('toast'); t.textContent=m; t.style.opacity=1; clearTimeout(toast.h); toast.h=setTimeout(()=>t.style.opacity=0,1100); };
+const dfmt = d => (d>0?'+':'')+d.toFixed(2).replace('.',',').replace(/0$/,'')+'%';
+
+function syncUI(){
+  $('depth').value = S.depth; $('depthVal').textContent = dfmt(S.depth);
+  $('mode').value = S.mode; $('ana').value = S.ana; $('aspect').value = S.aspect;
+  $('swap').checked = S.swap; $('trans').value = S.trans; $('transVal').textContent = S.trans+' s'; $('zoom').value=S.zoom; $('zoomVal').textContent=S.zoom.toFixed(2).replace('.',',')+'x'; $('panx').value=-S.px; $('pany').value=S.py; $('sat').value=S.sat; $('con').value=S.con; $('gam').value=S.gam; $('eyes').value = S.eyes; $('bri').value = S.bri; $('vol').value = S.vol; $('rate').value = String(S.rate);
+  vid.volume = S.vol; vid.playbackRate = S.rate;
+}
+let rampMin = 0, rampT0 = 0, rampAcc = 0;
+function startRamp(min){ rampMin = min; rampAcc = 0; rampT0 = performance.now(); if(min) { S.depth = 0; $('depth').value = 0; $('depthVal').textContent = dfmt(0); toast('Rampa 0 → +8% in '+min+' min'); } }
+$('trans').oninput = e => { S.trans = +e.target.value; $('transVal').textContent = S.trans+' s'; save(); };
+let acc = 0, lastT = performance.now();
+const resetTrans = () => { acc = 0; lastT = performance.now(); };
+['seeking','emptied','loadstart'].forEach(ev => vid.addEventListener(ev, resetTrans));
+const transProg = () => S.trans > 0 ? Math.min(1, acc / (S.trans*1000)) : 1;
+const effDepth = () => S.depth * transProg();
+function stepTrans(){
+  const now = performance.now(); if (!vid.paused) acc += now - lastT; lastT = now;
+  const p = transProg();
+  $('depthVal').textContent = dfmt(S.depth) + (p < 1 ? ' (ora ' + dfmt(Math.round(effDepth()*100)/100) + ')' : '');
+}
+function stepRamp(){
+  const now = performance.now(), dt = now - rampT0; rampT0 = now;
+  if (!rampMin || vid.paused) return;
+  rampAcc += dt;
+  const d = Math.min(8, 8 * rampAcc / (rampMin*60000));
+  S.depth = Math.round(d*100)/100; $('depth').value = S.depth; $('depthVal').textContent = dfmt(S.depth);
+  if (d >= 8) { rampMin = 0; $('ramp').value = '0'; save(); toast('Rampa completata: +8%'); }
+}
+function setDepth(v){
+  if (rampMin) { rampMin = 0; $('ramp').value = '0'; } S.depth = Math.max(-30, Math.min(30, Math.round(v*100)/100)); $('depth').value=S.depth; $('depthVal').textContent=dfmt(S.depth); save(); }
+$('depth').oninput = e => setDepth(+e.target.value);
+$('bZero').onclick = () => setDepth(0);
+$('mode').onchange = e => { S.mode=+e.target.value; layout(); save(); };
+$('ana').onchange = e => { S.ana=+e.target.value; save(); };
+$('aspect').onchange = e => { S.aspect=+e.target.value; layout(); save(); };
+$('zoom').oninput = e => setZoom(+e.target.value);
+$('panx').oninput = e => { S.px = -(+e.target.value); save(); };
+$('pany').oninput = e => { S.py = +e.target.value; save(); };
+$('sat').oninput = e => { S.sat=+e.target.value; save(); };
+$('con').oninput = e => { S.con=+e.target.value; save(); };
+$('gam').oninput = e => { S.gam=+e.target.value; save(); };
+$('bCol').onclick = () => { S.sat=1; S.con=1; S.gam=1; S.bri=1; syncUI(); save(); };
+$('bView').onclick = resetView;
+function setZoom(z){ S.zoom = Math.max(1, Math.min(4, Math.round(z*100)/100)); $('zoom').value=S.zoom; $('zoomVal').textContent=S.zoom.toFixed(2).replace('.',',')+'x'; save(); }
+function resetView(){ S.zoom=1; S.px=0; S.py=0; syncUI(); save(); }
+cv.addEventListener('wheel', e => { e.preventDefault(); setZoom(S.zoom * (e.deltaY<0 ? 1.1 : 1/1.1)); }, {passive:false});
+let drag=null, moved=false;
+cv.addEventListener('pointerdown', e => { drag={x:e.clientX,y:e.clientY}; moved=false; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove', e => { if(!drag) return; const dx=e.clientX-drag.x, dy=e.clientY-drag.y; if(Math.abs(dx)+Math.abs(dy)>3) moved=true; if(!moved) return; drag={x:e.clientX,y:e.clientY};
+  S.px=Math.max(-.5,Math.min(.5,S.px-dx/cv.clientWidth/S.zoom)); S.py=Math.max(-.5,Math.min(.5,S.py-dy/cv.clientHeight/S.zoom)); $('panx').value=-S.px; $('pany').value=S.py; });
+cv.addEventListener('pointerup', () => { drag=null; save(); });
+$('eyes').onchange = e => { S.eyes=+e.target.value; save(); };
+$('swap').onchange = e => { S.swap=e.target.checked; save(); };
+$('bri').oninput = e => { S.bri=+e.target.value; save(); };
+$('vol').oninput = e => { S.vol=+e.target.value; vid.volume=S.vol; save(); };
+$('rate').onchange = e => { S.rate=+e.target.value; vid.playbackRate=S.rate; save(); };
+
+const seek = d => { if(!loaded) return; vid.currentTime = Math.max(0, Math.min(vid.duration||1e9, vid.currentTime + d)); toast((d>0?'+':'')+d+' s'); };
+const toggle = () => { if(!loaded) return; vid.paused ? vid.play() : vid.pause(); };
+$('bPlay').onclick = toggle; $('bBack').onclick = () => seek(-5); $('bFwd').onclick = () => seek(5);
+vid.onplay = vid.onpause = () => $('bPlay').textContent = vid.paused ? '▶' : '⏸';
+$('bFull').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+$('bHelp').onclick = () => { const h=$('help'); h.style.display = h.style.display=='block' ? 'none':'block'; };
+document.addEventListener('fullscreenchange', () => setTimeout(layout, 100));
+
+// barra di scorrimento
+let dragging = false;
+function seekFromX(x){ const r=$('seekbar').getBoundingClientRect(); const f=Math.max(0,Math.min(1,(x-r.left)/r.width)); if(loaded && vid.duration) vid.currentTime = f*vid.duration; }
+$('seekwrap').addEventListener('pointerdown', e => { dragging=true; $('seekwrap').setPointerCapture(e.pointerId); seekFromX(e.clientX); });
+$('seekwrap').addEventListener('pointermove', e => {
+  const r=$('seekbar').getBoundingClientRect(); const f=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
+  const h=$('hover'); h.style.display='block'; h.style.left=(e.clientX-$('seekwrap').getBoundingClientRect().left)+'px'; h.textContent=fmt(f*(vid.duration||0));
+  if (dragging) seekFromX(e.clientX);
+});
+$('seekwrap').addEventListener('pointerup', () => dragging=false);
+$('seekwrap').addEventListener('pointerleave', () => $('hover').style.display='none');
+function updateSeek(){
+  const d=vid.duration||0, f=d?vid.currentTime/d:0;
+  $('seekfill').style.width=(f*100)+'%'; $('seekknob').style.left=(f*100)+'%';
+  $('time').textContent = fmt(vid.currentTime)+' / '+fmt(d);
+}
+
+// apri file
+function openFile(f){
+  if (!f) return;
+  if (vid.src) URL.revokeObjectURL(vid.src);
+  vid.src = URL.createObjectURL(f); document.title = f.name + ' — Player 3D';
+  vid.onloadedmetadata = () => { loaded = true; $('drop').style.display='none'; lastW=0; syncUI(); vid.play(); };
+  vid.onerror = () => toast('Formato non supportato dal browser (prova MP4/H.264 o WebM)');
+}
+$('file').onchange = e => openFile(e.target.files[0]);
+addEventListener('dragover', e => e.preventDefault());
+addEventListener('drop', e => { e.preventDefault(); openFile(e.dataTransfer.files[0]); });
+cv.addEventListener('click', () => { if(!moved) toggle(); });
+cv.addEventListener('dblclick', () => $('bFull').click());
+
+// tastiera
+addEventListener('keydown', e => {
+  if (e.target.tagName==='SELECT' && e.key.length>1) e.target.blur();
+  const big = e.shiftKey ? 30 : e.ctrlKey ? 120 : 5;
+  switch (e.key) {
+    case ' ': e.preventDefault(); toggle(); break;
+    case 'ArrowLeft': e.preventDefault(); setDepth(S.depth - (e.shiftKey?1:.1)); toast('Profondità '+dfmt(S.depth)); break;
+    case 'ArrowRight': e.preventDefault(); setDepth(S.depth + (e.shiftKey?1:.1)); toast('Profondità '+dfmt(S.depth)); break;
+    case 'ArrowUp': case 'PageUp': e.preventDefault(); seek(e.key=='PageUp'?30:5); break;
+    case 'ArrowDown': case 'PageDown': e.preventDefault(); seek(e.key=='PageDown'?-30:-5); break;
+    case '0': setDepth(0); toast('Profondità 0'); break;
+    case ',': vid.pause(); vid.currentTime = Math.max(0, vid.currentTime - 1/30); break;
+    case '.': vid.pause(); vid.currentTime += 1/30; break;
+    case 's': case 'S': S.swap=!S.swap; $('swap').checked=S.swap; save(); toast('Occhi scambiati: '+(S.swap?'sì':'no')); break;
+    case 'm': case 'M': S.mode=(S.mode+1)%3; $('mode').value=S.mode; layout(); save(); toast($('mode').selectedOptions[0].text); break;
+    case 'a': case 'A': S.ana=(S.ana+1)%4; $('ana').value=S.ana; save(); toast($('ana').selectedOptions[0].text); break;
+    case 'w': case 'W': S.aspect=(S.aspect+1)%3; $('aspect').value=S.aspect; layout(); save(); toast('Larghezza: '+$('aspect').selectedOptions[0].text); break;
+    case '[': S.rate=Math.max(.25,S.rate-.25); vid.playbackRate=S.rate; $('rate').value=String(S.rate); save(); toast('Velocità '+S.rate+'x'); break;
+    case ']': S.rate=Math.min(3,S.rate+.25); vid.playbackRate=S.rate; $('rate').value=String(S.rate); save(); toast('Velocità '+S.rate+'x'); break;
+    case 'f': case 'F': $('bFull').click(); break;
+    case '+': case '=': setZoom(S.zoom*1.1); toast('Zoom '+S.zoom.toFixed(2)+'x'); break;
+    case '-': setZoom(S.zoom/1.1); toast('Zoom '+S.zoom.toFixed(2)+'x'); break;
+    case 'i': case 'I': S.py-=.02; $('pany').value=S.py; save(); break;
+    case 'k': case 'K': S.py+=.02; $('pany').value=S.py; save(); break;
+    case 'j': case 'J': S.px+=.02; $('panx').value=-S.px; save(); break;
+    case 'l': case 'L': S.px-=.02; $('panx').value=-S.px; save(); break;
+    case 'r': case 'R': resetView(); toast('Vista azzerata'); break;
+    case 'o': case 'O': $('file').click(); break;
+    case 'h': case 'H': $('bHelp').click(); break;
+  }
+});
+
+// nascondi controlli
+let idleT; const wake = () => { document.body.classList.remove('idle'); clearTimeout(idleT); idleT=setTimeout(()=>{ if(loaded && !vid.paused) document.body.classList.add('idle'); }, 2500); };
+addEventListener('mousemove', wake); addEventListener('keydown', wake); wake();
+
+syncUI();
+</script>
+</body>
+</html>
+
+
+
+
+
